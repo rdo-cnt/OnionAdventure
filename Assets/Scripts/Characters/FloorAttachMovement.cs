@@ -4,262 +4,195 @@ using UnityEngine;
 
 public class FloorAttachMovement : MonoBehaviour
 {
-    public float skateAirTime = 1f;
-    protected float skateAirTimer;
+    protected Rigidbody2D rigidbody;
+    protected CapsuleCollider2D collider;
 
-    public bool grounded;
-    public bool middleGrounded;
-    public float rotationCooldown = 0;
-    protected bool stick = false;
-
-    public float leftAngleSuper;
-    public float rightAngleSuper;
-    public float leftAngle;
-    public float middleAngle;
-    public float rightAngle;
-    public AngleInfo left;
-    public AngleInfo middle;
-    public AngleInfo right;
-
-    public float maxDescendingAngle = 80f;
-    public float maxClimbingAngle = 80f;
-
+    public AngleInfo leftAngle;
+    public AngleInfo middleAngle;
+    public AngleInfo rightAngle;
     public Transform leftAnglePos;
     public Transform middleAnglePos;
     public Transform rightAnglePos;
 
-    protected float fRaycastDistance = .38f;
-    protected float fRaycastOffset = 0.3f;
-    public LayerMask whatIsGround;
+    protected float raycastDistance = .38f;
+    public LayerMask groundLayer;
+    public float maxClimbingAngle = 80f;
+    public float maxStandingAngle = 55f;
 
-    public float speed = 2f;
-    public float dir = 1f;
-    public float velocityX = 0;
-
-    protected Rigidbody2D m_rb;
-    protected CapsuleCollider2D m_col;
-
-    //Platforming related
-    public float maxJumpHeight = 4;
-    public float minJumpHeight = 1;
-    public float timeToJumpApex = .4f;
-    protected float gravity;
-    float maxJumpVelocity;
-    float minJumpVelocity;
+    public bool isGrounded = false;
+    public bool isSticked = false;
+    public bool isBumping = false;
 
     // Use this for initialization
     void Start()
     {
-        //getBoxCollider
-        m_col = GetComponent<CapsuleCollider2D>();
-        m_rb = GetComponent<Rigidbody2D>();
-
-        gravity = -(0.1f * maxJumpHeight) / Mathf.Pow(timeToJumpApex, 2);
-        maxJumpVelocity = Mathf.Abs(gravity) * timeToJumpApex;
-        minJumpVelocity = Mathf.Sqrt(2 * Mathf.Abs(gravity) * minJumpHeight);
+        collider = GetComponent<CapsuleCollider2D>();
+        rigidbody = GetComponent<Rigidbody2D>();
     }
 
-    // Update is called once per frame
     void Update()
     {
+        AngleCalculation();
+        GroundedCalculation();
+    }
+
+    public void AngleCalculation()
+    {
         //Check all angles
-        middleAngle = RayCastDown(middleAnglePos, true);
+        leftAngle.reset();
+        middleAngle.reset();
+        rightAngle.reset();
 
-        //Check front, downwards and inwards for left and right angles
+        middleAngle = RayCastDown(middleAnglePos);
+
         leftAngle = RayCastSide(leftAnglePos, -1f);
-        if (leftAngle == 0)
+        if (!leftAngle.detect)
             leftAngle = RayCastDown(leftAnglePos);
-
+        if (!leftAngle.detect)
+            leftAngle = RayCastSide(leftAnglePos, 1f, -raycastDistance);
 
         rightAngle = RayCastSide(rightAnglePos, 1f);
-        if (rightAngle == 0)
+        if (!rightAngle.detect)
             rightAngle = RayCastDown(rightAnglePos);
-        
+        if (!rightAngle.detect)
+            rightAngle = RayCastSide(rightAnglePos, -1f, -raycastDistance);
 
-        if (!stick)
-        {
-            Debug.Log("not sticking");
-            transform.eulerAngles = new Vector3(0, 0, 0);
-        }
+        Debug.Log("left: " + leftAngle.angle + "middle: " + middleAngle.angle + "right: " + rightAngle.angle);
+    }
 
-        gravityCheck();
-        crouchSlope();
+    public void GroundedCalculation()
+    {
+        isGrounded = false;
 
-        Debug.Log("left: " + leftAngle + "middle: " + middleAngle + "right: " + rightAngle);
-
-        MoveSideWays(velocityX);
-
-        skatingTiming();
+        if (middleAngle.detect)
+            isGrounded = true;
+        //Non sticked groundedness
+        if (leftAngle.detect && (Mathf.Abs(leftAngle.angle) < maxStandingAngle))
+            isGrounded = true;
+        if (rightAngle.detect && (Mathf.Abs(rightAngle.angle) < maxStandingAngle))
+            isGrounded = true;
 
     }
 
-    public void crouchSlope()
+    public AngleInfo RayCastDown(Transform raycastTransform)
     {
-        if(grounded && !stick)
-        {
-            Debug.Log(Mathf.Sign(middleAngle));
-            if(middleAngle != 0)
-            {
-                Debug.Log("stickyTime");
-                velocityX = speed * Mathf.Sign(middleAngle);
-                stick = true;
-            }
-            
-        }
+        return RayCastDetection(raycastTransform, -transform.up);
     }
 
-    public void gravityCheck()
+    public AngleInfo RayCastSide(Transform raycastTransform, float directionX , float offsetY = 0)
     {
-        if(stick || grounded)
-        {
-            m_rb.gravityScale = 0;
-        }
-        else
-        {
-            Debug.Log("gravity time");
-            m_rb.gravityScale = -gravity;
-        }
+        return RayCastDetection(raycastTransform, transform.right, directionX, offsetY);
     }
 
-    public void skatingTiming()
+    public AngleInfo RayCastDetection(Transform raycastTransform, Vector3 raycastDirection, float directionX = 1, float offsetY = 0)
     {
-        //Extra air while skating
-        if (grounded)
-            skateAirTimer = skateAirTime;
-        else
-        {
-            if (skateAirTimer > 0)
-                skateAirTimer -= Time.deltaTime;
-            else
-                stick = false;
-        }
-    }
+        AngleInfo TemporaryAngle;
+        TemporaryAngle.angle = 0;
+        TemporaryAngle.detect = false;
+        TemporaryAngle.distance = 0;
 
-    public float RayCastDown(Transform rayPos, bool ground = false)
-    {
-        Vector3 origin = rayPos.position;
-        RaycastHit2D hitInfo = Physics2D.Raycast(origin, -transform.up, fRaycastDistance, whatIsGround);
-
-        //If we hit no collider, this means we are NOT grounded (= not on the ground)
+        Vector3 raycastOriginPosition = raycastTransform.position;
+        raycastOriginPosition += transform.up * offsetY;
+        raycastDirection *= directionX;
+        RaycastHit2D hitInfo = Physics2D.Raycast(raycastOriginPosition, raycastDirection, raycastDistance, groundLayer);
         if (hitInfo.collider == null)
         {
-            Debug.DrawRay(origin, -transform.up * fRaycastDistance, Color.green);
-            if(ground)
-            { grounded = false;
-            middleGrounded = false;}
-                
-            return 0;
+            Debug.DrawRay(raycastOriginPosition, raycastDirection * raycastDistance, Color.green);
+            return TemporaryAngle;
         }
-        Debug.DrawRay(origin, -transform.up * fRaycastDistance, Color.red);
-        float Angle = Vector2.Angle(hitInfo.normal, Vector2.up) * Mathf.Sign(hitInfo.normal.x);
-        grounded = true;
-        if (ground)
-        {
-            middleGrounded = true;
-            if (!grounded)
-            {
-                Debug.Log("I'm grounded!");
-                
-                m_rb.velocity = m_rb.velocity + ((new Vector2(-transform.up.x, -transform.up.y)) * speed * 1);
-            }
-        }
-              
-        return Angle;
+
+        Debug.DrawRay(raycastOriginPosition, raycastDirection * raycastDistance, Color.red);
+        TemporaryAngle.angle = Vector2.Angle(hitInfo.normal, Vector2.up) * Mathf.Sign(hitInfo.normal.x);
+        TemporaryAngle.detect = true;
+        TemporaryAngle.distance = hitInfo.distance;
+
+        return TemporaryAngle;
     }
 
-    public float RayCastSide(Transform rayPos, float dirX, float offsetY = 0)
+
+    public void MoveSideWays(float speedX)
     {
-        Vector3 origin = rayPos.position;
-        origin.y += transform.up.y*offsetY;
-        
-        RaycastHit2D hitInfo = Physics2D.Raycast(origin, dirX*transform.right, fRaycastDistance, whatIsGround);
+        isBumping = false;
 
-        //If we hit no collider, this means we are NOT grounded (= not on the ground)
-        if (hitInfo.collider == null)
+        if (speedX == 0)
+            return;
+
+        rigidbody.velocity = new Vector2(transform.right.x * speedX, transform.right.y * speedX);
+
+        if (speedX > 0)
+            MoveRight(speedX);
+        else
+            MoveLeft(speedX);
+    }
+
+    public void MoveRight(float speedX)
+    {
+        float angleDifference = Mathf.Abs(Mathf.Abs(rightAngle.angle) - Mathf.Abs(middleAngle.angle));
+        float angleDifferenceSign = Mathf.Sign(rightAngle.angle - middleAngle.angle);
+
+        if (angleDifference <= maxClimbingAngle && middleAngle.detect)
         {
-            Debug.DrawRay(origin, dirX * transform.right * fRaycastDistance, Color.green);
-            return 0;
+            //climbing
+            if (angleDifferenceSign < 0)
+                if (!CompareFloats(rightAngle.angle, middleAngle.angle))
+                    rigidbody.MovePosition(transform.position + ((new Vector3(transform.right.x, transform.right.y, 0)) * rightAngle.distance));
+                //descending
+                else
+                if (!CompareFloats(rightAngle.angle, middleAngle.angle))
+                    rigidbody.velocity = rigidbody.velocity + ((new Vector2(-transform.up.x, -transform.up.y)) * Mathf.Abs(speedX) * 2);
+
+            if (isSticked)
+            {
+                //Change Angle of player
+                transform.eulerAngles = new Vector3(0, 0, -rightAngle.angle);
+                stickToFloor();
+            }
         }
-        Debug.DrawRay(origin, transform.right * fRaycastDistance, Color.red);
-        float Angle = Vector2.Angle(hitInfo.normal, Vector2.up) * Mathf.Sign(hitInfo.normal.x);
+        else
+            if (angleDifference > maxClimbingAngle)
+                isBumping = true;
+    }
 
+    public void MoveLeft(float speedX)
+    {
+        float angleDifference = Mathf.Abs(Mathf.Abs(leftAngle.angle) - Mathf.Abs(middleAngle.angle));
+        float angleDifferenceSign = Mathf.Sign(middleAngle.angle - leftAngle.angle);
 
-        return Angle;
+        if (angleDifference <= maxClimbingAngle && middleAngle.detect)
+        {
+            //climbing
+            if (angleDifferenceSign < 0)
+                if (!CompareFloats(leftAngle.angle, middleAngle.angle))
+                    rigidbody.MovePosition(transform.position + ((new Vector3(-transform.right.x, -transform.right.y, 0)) * leftAngle.distance));
+                //descend
+                else
+                if (!CompareFloats(leftAngle.angle, middleAngle.angle))
+                    rigidbody.velocity = rigidbody.velocity + ((new Vector2(-transform.up.x, -transform.up.y)) * Mathf.Sign(speedX) * 2);
+
+            if (isSticked)
+            {
+                //Change Angle of player
+                transform.eulerAngles = new Vector3(0, 0, -leftAngle.angle);
+                stickToFloor();
+            }
+        }
+        else
+            if (angleDifference > maxClimbingAngle)
+            isBumping = true;
 
     }
 
-    public void MoveSideWays(float Dir)
+    public void stickToFloor()
     {
-        //Non stick actions
-        if (Dir == 0)
-            return;
-
-        m_rb.velocity = new Vector2(transform.right.x * Dir, transform.right.y * Dir) * speed;
-
-        if(!stick)
+        Vector3 raycastOriginPosition = transform.position;
+        RaycastHit2D hitInfo = Physics2D.Raycast(raycastOriginPosition, -transform.up, raycastDistance*2, groundLayer);
+        if(hitInfo.collider == null)
         {
-            return;
+            Debug.DrawRay(raycastOriginPosition, -transform.up * raycastDistance * 2, Color.magenta);
+            return; 
         }
-
-        //right
-        if (Dir > 0)
-        {
-            float angleDif = Mathf.Abs(Mathf.Abs(rightAngle) - Mathf.Abs(middleAngle));
-            float angleSign = Mathf.Sign(rightAngle - middleAngle);
-            Debug.Log("middleGrounded is " + middleGrounded);
-            if (angleDif <= maxClimbingAngle && middleGrounded)
-            {
-                Debug.Log("Valid difference at " + angleDif + "with a sign of " + angleSign);
-                //Climbing
-                if (angleSign < 0)
-                {
-                    if (!CompareFloats(rightAngle, middleAngle))
-                    {
-                        m_rb.MovePosition(transform.position + ((new Vector3(transform.right.x, transform.right.y, 0)) * 0.1f));
-                    }
-                }
-                else
-                {
-                    if (!CompareFloats(rightAngle, middleAngle))
-                    {
-                        
-                        m_rb.velocity = m_rb.velocity + ((new Vector2(-transform.up.x, -transform.up.y)) * speed * 2);
-                    }
-                }
-                transform.eulerAngles = new Vector3(0, 0, -rightAngle);
-            }
-
-        }
-        //left
-        if (Dir < 0)
-        {
-            float angleDif = Mathf.Abs(Mathf.Abs(leftAngle) - Mathf.Abs(middleAngle));
-            float angleSign = Mathf.Sign(middleAngle - leftAngle);
-            if (angleDif <= maxClimbingAngle && grounded)
-            {
-                Debug.Log("Valid difference at " + angleDif + "with a sign of " + angleSign);
-                //Climbing
-                if (angleSign < 0)
-                {
-                    if (!CompareFloats(leftAngle, middleAngle))
-                    {
-                        m_rb.MovePosition(transform.position + ((new Vector3(-transform.right.x, -transform.right.y, 0)) * 0.1f));
-                    }
-                }
-                else
-                {
-                    if (!CompareFloats(leftAngle, middleAngle))
-                    {
-                        m_rb.velocity = m_rb.velocity + ((new Vector2(-transform.up.x, -transform.up.y)) * speed * 2);
-                    }
-                }
-                transform.eulerAngles = new Vector3(0, 0, -leftAngle);
-            }
-
-        }
-
-
-
+        Debug.DrawRay(raycastOriginPosition, -transform.up * raycastDistance * 2, Color.yellow);
+        transform.position = hitInfo.point;
     }
 
     public bool CompareFloats(float a, float b = 0)
@@ -267,69 +200,17 @@ public class FloorAttachMovement : MonoBehaviour
         return (Mathf.Abs(a - b) < 0.3f);
     }
 
-    public float AverageFloats(float a, float b)
-    {
-        return (a + b) / 2;
-    }
-
-    public bool isSided(float offsetX)
-    {
-        //get ends of collision box
-        Vector2 min = m_col.bounds.min;
-        Vector2 max = m_col.bounds.max;
-
-        //set offset for better precision on raycast positioning
-        min.y += 0.1f;
-        max.y -= 0.1f;
-
-        //determines on which side to put the raycast
-        if (offsetX > 0)
-            min.x = m_col.bounds.max.x;
-        else
-            max.x = m_col.bounds.min.x;
-
-        //determines the width and starting position of the raycast
-        Vector2 originLine = max - min;
-        Vector2 center = min + originLine * 0.5f;
-
-        Vector2 centerTemp = center;
-        centerTemp.y += (max.y - min.y) / 3;
-
-        //center.y += originLine.y * raycastOffsetY;
-        //Create line that shoots downwards from the feet of our unit
-        RaycastHit2D hitInfo = Physics2D.Raycast(centerTemp, new Vector2(offsetX, 0), fRaycastDistance, whatIsGround);
-
-        Vector2 centerTemp2 = center;
-        centerTemp2.y -= (max.y - min.y) / 4;
-
-        RaycastHit2D hitInfo2 = Physics2D.Raycast(centerTemp2, new Vector2(offsetX, 0), fRaycastDistance, whatIsGround);
-
-        //if there was no collider
-        if (hitInfo.collider == null || hitInfo2.collider == null)
-        {
-            //this will draw a line in our screen, similar to the raycast
-            Debug.DrawRay(centerTemp, new Vector2(fRaycastDistance * (Mathf.Abs(offsetX) / offsetX), 0), Color.green);
-            Debug.DrawRay(centerTemp2, new Vector2(fRaycastDistance * (Mathf.Abs(offsetX) / offsetX), 0), Color.green);
-            //transform.parent = null;
-            return false;
-        }
-
-        Debug.DrawRay(centerTemp, new Vector2(fRaycastDistance * (Mathf.Abs(offsetX) / offsetX), 0), Color.red);
-        Debug.DrawRay(centerTemp2, new Vector2(fRaycastDistance * (Mathf.Abs(offsetX) / offsetX), 0), Color.red);
-
-
-        return true;
-    }
-
     public struct AngleInfo
     {
         public bool detect;
         public float angle;
+        public float distance;
 
         public void reset()
         {
             detect = false;
             angle = 0;
+            distance = 0;
         }
     }
 

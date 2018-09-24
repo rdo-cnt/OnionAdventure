@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
 
-[RequireComponent(typeof(Controller2D))]
+
 public class PlayerScript : MonoBehaviour
 {
     //The player states
@@ -10,105 +10,102 @@ public class PlayerScript : MonoBehaviour
         Free,
         Dash,
         SuperDash,
-        HorizontalJump
+        StickyJump
     }
     protected PlayerState state = PlayerState.Free;
 
-    //Components
-    protected AnimationManager m_anim;
-    protected Destructor m_destr;
+    //Input
+    Vector2 input;
+    private float directionFloatX = 1;
 
-    //Angles
-    public float maxSlopeAngle = 55f;
-    public float maxSlopeAngleSuperDash = 100f;
+    //Platforming related
 
     //Move Speeds
     public float fStandSpeed = 4f;
     public float fCrouchSpeed = 2f;
     public float fDashSpeed = 6f;
     public float fSuperDashSpeed = 8f;
-    public float fHorizontalJump = 20f;
-
-    //Ability variables
-
-    //Dashing
-    protected IEnumerator DashRoutine;
-        public float dashTime = 1.2f;
+    public float fStickJump = 20f;
 
     //Platforming related
     public float maxJumpHeight = 4;
     public float minJumpHeight = 1;
     public float timeToJumpApex = .4f;
-    float accelerationTimeAirborne = 0;
-    float accelerationTimeGrounded = 0;
-    float moveSpeed = 12;
-
-    Vector2 input;
-    private float directionFloat = 1;
-
-    public Vector2 wallJumpClimb;
-    public Vector2 wallJumpOff;
-    public Vector2 wallLeap;
-    bool wallSliding = false;
-    int wallDirX;
-
-    public float wallSlideSpeedMax = 3;
-    public float wallStickTime = .25f;
-    float timeToWallUnstick;
-
-    float gravity;
+    protected float gravity;
     float maxJumpVelocity;
     float minJumpVelocity;
-    Vector3 velocity;
-    float velocityXSmoothing;
-    bool defyingGravity = false;
 
-    Controller2D controller;
+    //Angles
+    public float maxSlopeAngle = 55f;
+    public float maxSlopeAngleSuperDash = 100f;
 
+    //Components
+    protected FloorAttachMovement floorAttachingMovement;
+    protected AnimationManager animationManager;
+    protected Destructor blockDestructor;
+    public Rigidbody2D rigidbody;
+
+    //Dashing
+    protected IEnumerator DashRoutine;
+    public float dashTime = 1.2f;
+    public float stickingTime = 1f;
+    protected float stickingTimer;
+   
+
+
+    // Use this for initialization
     void Start()
     {
-        controller = GetComponent<Controller2D>();
-
-        m_anim = GetComponent<AnimationManager>();
-        m_destr = GetComponent<Destructor>();
-        m_destr.enabled = false;
-
-        gravity = -(2 * maxJumpHeight) / Mathf.Pow(timeToJumpApex, 2);
-        maxJumpVelocity = Mathf.Abs(gravity) * timeToJumpApex;
-        minJumpVelocity = Mathf.Sqrt(2 * Mathf.Abs(gravity) * minJumpHeight);
-        print("Gravity: " + gravity + "  Jump Velocity: " + maxJumpVelocity);
-
-        controller.maxSlopeAngle = maxSlopeAngle;
+        getComponentReferences();
+        initializeVariables();
+        setInitialGravity();
     }
 
+    void getComponentReferences()
+    {
+        floorAttachingMovement = GetComponent<FloorAttachMovement>();
+        animationManager = GetComponent<AnimationManager>();
+        blockDestructor = GetComponent<Destructor>();
+        rigidbody = GetComponent<Rigidbody2D>();
+    }
+
+    void initializeVariables()
+    {
+        blockDestructor.enabled = false;
+        floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
+    }
+
+    void setInitialGravity()
+    {
+        gravity = -(0.1f * maxJumpHeight) / Mathf.Pow(timeToJumpApex, 2);
+        maxJumpVelocity = Mathf.Abs(gravity) * timeToJumpApex;
+        minJumpVelocity = Mathf.Sqrt(2 * Mathf.Abs(gravity) * minJumpHeight);
+    }
+
+    // Update is called once per frame
     void Update()
     {
-        //Actions done regardless of states
-        CalculateGravity();
-        defyingGravity = false;
-        controller.Move(velocity * Time.deltaTime, input);
-        AnimationUpdate();
+        //Actions regardless of state
+        CheckForGravity();
+        CheckForStickiness();
 
-        if (controller.collisions.above || controller.collisions.below)
-        {
-            velocity.y = 0;
-        }
 
         //Do actions based on states
         switch (state)
         {
             case PlayerState.Free:
-                Move();
+                Walk();
                 Jump();
                 AttackStart();
                 checkDirection();
-                CrouchSlope();
+                CheckForSlope();
+
                 break;
 
             case PlayerState.Dash:
                 Jump();
                 Attack();
-                CrouchSlope();
+
                 break;
 
             case PlayerState.SuperDash:
@@ -116,124 +113,94 @@ public class PlayerScript : MonoBehaviour
                 Jump();
                 break;
 
-            case PlayerState.HorizontalJump:
-                HorizontalJump();
+            case PlayerState.StickyJump:
+                StickJump();
                 break;
         }
+    }
 
+    public void Walk()
+    {
+        input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+        floorAttachingMovement.MoveSideWays(input.x * fStandSpeed);
+    }
+
+    public void CheckForGravity()
+    {
+        if (floorAttachingMovement.isGrounded && floorAttachingMovement.isSticked)
+            rigidbody.gravityScale = 0f;
+        else
+            rigidbody.gravityScale = -gravity;
+    }
+
+    public void CheckForStickiness()
+    {
+        //Extra air while skating
+        if (floorAttachingMovement.middleAngle.detect)
+            stickingTimer = stickingTime;
+        else
+        {
+            if (stickingTimer > 0)
+                stickingTimer -= Time.deltaTime;
+            else
+                floorAttachingMovement.isSticked = false;
+        }
     }
 
     public void Jump()
     {
         if (Input.GetButtonDown("Jump"))
         {
-            if (wallSliding)
+            if (floorAttachingMovement.isSticked)
             {
-                if (wallDirX == input.x)
-                {
-                    velocity.x = -wallDirX * wallJumpClimb.x;
-                    velocity.y = wallJumpClimb.y;
-                }
-                else if (input.x == 0)
-                {
-                    velocity.x = -wallDirX * wallJumpOff.x;
-                    velocity.y = wallJumpOff.y;
-                }
-                else
-                {
-                    velocity.x = -wallDirX * wallLeap.x;
-                    velocity.y = wallLeap.y;
-                }
-            }
-            if (defyingGravity)
-            {
-                    directionFloat*= -1;
-                    velocity.x = Mathf.Sign(controller.collisions.slopeNormal.x)*fHorizontalJump;
-                    state = PlayerState.HorizontalJump;
+                directionFloatX *= -1;
+                floorAttachingMovement.isSticked = false;
+                rigidbody.velocity = new Vector2(Mathf.Sign(floorAttachingMovement.middleAngle.angle)*fStickJump, rigidbody.velocity.y);
+                state = PlayerState.StickyJump;
 
             }
 
-                if (controller.collisions.below)
-                {
-                    velocity.y = maxJumpVelocity;
-                }
+            if (floorAttachingMovement.isGrounded)
+            {
+                rigidbody.velocity = new Vector2(rigidbody.velocity.x, maxJumpVelocity);
+            }
 
-            
+
         }
 
         if (Input.GetButtonUp("Jump"))
         {
- 
-                if (velocity.y > minJumpVelocity)
-                {
-                    velocity.y = minJumpVelocity;
-                }
+
+            if (!floorAttachingMovement.isGrounded && rigidbody.velocity.y > minJumpVelocity)
+            {
+                rigidbody.velocity = new Vector2(rigidbody.velocity.x,minJumpVelocity);
+            }
 
         }
     }
 
-    public void Move()
+    public void CheckForSlope()
     {
-        input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
-        float targetVelocityX = input.x * fStandSpeed;
-        velocity.x = Mathf.SmoothDamp(velocity.x, targetVelocityX, ref velocityXSmoothing, (controller.collisions.below) ? accelerationTimeGrounded : accelerationTimeAirborne);
-    }
-
-    void HandleWallSliding()
-    {
-        wallDirX = (controller.collisions.left) ? -1 : 1;
-        wallSliding = false;
-        if ((controller.collisions.left || controller.collisions.right) && !controller.collisions.below && velocity.y < 0)
+        if (input.y < 0 && floorAttachingMovement.isGrounded && floorAttachingMovement.middleAngle.angle != 0)
         {
-            wallSliding = true;
-
-            if (velocity.y < -wallSlideSpeedMax)
-            {
-                velocity.y = -wallSlideSpeedMax;
-            }
-
-            if (timeToWallUnstick > 0)
-            {
-                velocityXSmoothing = 0;
-                velocity.x = 0;
-
-                if (input.x != wallDirX && input.x != 0)
-                {
-                    timeToWallUnstick -= Time.deltaTime;
-                }
-                else
-                {
-                    timeToWallUnstick = wallStickTime;
-                }
-            }
-            else
-            {
-                timeToWallUnstick = wallStickTime;
-            }
-
+            directionFloatX = Mathf.Sign(floorAttachingMovement.middleAngle.angle);
+            input.x = Mathf.Sign(floorAttachingMovement.middleAngle.angle);
+            Debug.Log("could do a slope dash, angle is" + floorAttachingMovement.middleAngle.angle);
+            Debug.Log("Would make you go to direction:" + Mathf.Sign(floorAttachingMovement.middleAngle.angle));
+            state = PlayerState.SuperDash;
         }
-
-    }
-
-    void CalculateGravity()
-    {
-        if (!defyingGravity)
-        {
-                velocity.y += gravity * Time.deltaTime;
-        }
-
     }
 
     IEnumerator DashAttack()
     {
         yield return new WaitForSeconds(dashTime);
         state = PlayerState.Free;
-        controller.maxSlopeAngle = maxSlopeAngle;
+        floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
     }
 
     public void AttackStart()
     {
-        m_destr.enabled = false;
+        blockDestructor.enabled = false;
         if (Input.GetButtonDown("Fire1"))
         {
             DashRoutine = DashAttack();
@@ -242,18 +209,64 @@ public class PlayerScript : MonoBehaviour
         }
     }
 
-    public void HorizontalJump()
+    public void Attack()
     {
-        //Check for bump
-        
-        if (controller.collisions.bumped)
+        floorAttachingMovement.MoveSideWays(fDashSpeed * directionFloatX);
+        blockDestructor.enabled = true;
+
+        //Change angle depended on groundedness
+        if (floorAttachingMovement.isGrounded)
+        {
+            floorAttachingMovement.maxClimbingAngle = maxSlopeAngleSuperDash;
+        }
+        else
+        {
+            floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
+        }
+
+        WallBumpingCheck();
+    }
+
+    public void SuperAttack()
+    {
+        floorAttachingMovement.MoveSideWays(fSuperDashSpeed * directionFloatX);
+        blockDestructor.enabled = true;
+
+        //Change angle depended on groundedness
+        if (floorAttachingMovement.isGrounded)
+        {
+            floorAttachingMovement.isSticked = true;
+            floorAttachingMovement.maxClimbingAngle = maxSlopeAngleSuperDash;
+        }
+        else
+        {
+            floorAttachingMovement.isSticked = false;
+            floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
+        }
+
+        WallBumpingCheck();
+    }
+
+    public void WallBumpingCheck()
+    {
+        if (floorAttachingMovement.isBumping)
+        {
+            floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
+            state = PlayerState.Free;
+            floorAttachingMovement.isSticked = false;
+        }
+    }
+
+    public void StickJump()
+    {
+        if (floorAttachingMovement.isBumping)
         {
             state = PlayerState.Free;
         }
 
-        if (controller.collisions.below || controller.collisions.bumped)
+        if (floorAttachingMovement.isBumping || floorAttachingMovement.isGrounded)
         {
-            if(Input.GetAxisRaw("Vertical") < 0)
+            if (Input.GetAxisRaw("Vertical") < 0)
             {
                 state = PlayerState.SuperDash;
             }
@@ -261,114 +274,23 @@ public class PlayerScript : MonoBehaviour
             {
                 state = PlayerState.Free;
             }
-            
         }
 
     }
 
-    public void Attack()
+    public void SetAnimatorVariables()
     {
-        velocity.x = fDashSpeed * directionFloat;
-        m_destr.enabled = true;
-
-        //Check for angle
-        if(controller.collisions.below )
-        {
-            controller.maxSlopeAngle = maxSlopeAngleSuperDash;
-        }
-        else
-        {
-            controller.maxSlopeAngle = maxSlopeAngle;
-        }
-    }
-
-    public void SuperAttack()
-    {
-        velocity.x = fSuperDashSpeed * directionFloat;
-        m_destr.enabled = true;
-        Debug.Log(controller.collisions.moveAmountOld.x);
-        float Angle = controller.collisions.slopeAngle;
-        Debug.Log(Angle);
-        if (Angle >= 89)
-        {
-            
-            defyingGravity = true;
-        }
-
-        //Check for angle
-        if (controller.collisions.below)
-        {
-            controller.maxSlopeAngle = maxSlopeAngleSuperDash;
-        }
-        else
-        {
-            controller.maxSlopeAngle = maxSlopeAngle;
-        }
-
-
-        //if ((controller.collisions.left || controller.collisions.right) && velocity.y < 0)
-        //{
-        //    controller.maxSlopeAngle = maxSlopeAngle;
-            
-        //    state = PlayerState.Free;
-        //}
-
-        if ((controller.collisions.left || controller.collisions.right) && controller.collisions.bumped)
-        {
-            controller.maxSlopeAngle = maxSlopeAngle;
-
-            state = PlayerState.Free;
-        }
-
-    }
-
-    public void CrouchSlope()
-    {
-        if (input.y < 0 && controller.collisions.below)
-        {
-            //controller.Move(velocity * Time.deltaTime, input);
-
-            if (directionFloat < 0)
-            {
-                float temp = velocity.y;
-                velocity.y = -1;
-                velocity.x = -1;
-                controller.Move(velocity * Time.deltaTime, input);
-                velocity.y = temp;
-                velocity.x = 0;
-            }
-
-            if (controller.collisions.slopeAngle != 0)
-            {
-                Debug.Log("could do a slope dash, angle is" + controller.collisions.slopeAngle);
-                Debug.Log("normal vector is" + controller.collisions.slopeNormal);
-                Debug.Log("Would make you go to direction:" + Mathf.Sign(controller.collisions.slopeNormal.x));
-                directionFloat = Mathf.Sign(controller.collisions.slopeNormal.x);
-                state = PlayerState.SuperDash;
-                
-            }
-        }
-    }
-
-    public void AnimationUpdate()
-    {
-        //set animator variables
-        m_anim.getAnimator().SetFloat("Speed", input.x);
-        m_anim.getAnimator().SetBool("InAir", !controller.collisions.below);
-        m_anim.getAnimator().SetBool("Dash", (state == PlayerState.Dash));
-        m_anim.getAnimator().SetBool("SuperDash", (state == PlayerState.SuperDash));
+        animationManager.getAnimator().SetFloat("Speed", input.x);
+        animationManager.getAnimator().SetBool("InAir", !floorAttachingMovement.isGrounded);
+        animationManager.getAnimator().SetBool("Dash", (state == PlayerState.Dash));
+        animationManager.getAnimator().SetBool("SuperDash", (state == PlayerState.SuperDash));
     }
 
     public void checkDirection()
     {
         if (input.x > 0)
-        {
-            directionFloat = 1;
-        }
+            directionFloatX = 1;
         if (input.x < 0)
-        {
-            directionFloat = -1;
-        }
-
-    }
+            directionFloatX = -1;
+     }
 }
