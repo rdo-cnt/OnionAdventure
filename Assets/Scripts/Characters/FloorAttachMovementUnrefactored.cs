@@ -97,7 +97,7 @@ public class FloorAttachMovementUnrefactored : MonoBehaviour {
     {
         if (middleAngle.detect && !stick)
         {
-            Debug.Log(Mathf.Sign(middleAngle.angle));
+            
             if (middleAngle.angle != 0)
             {
                 Debug.Log("stickyTime");

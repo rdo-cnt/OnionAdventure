@@ -73,7 +73,7 @@ public class PlayerScriptForAngleController : MonoBehaviour {
         m_destr = GetComponent<Destructor>();
         m_destr.enabled = false;
 
-        gravity = -(2 * maxJumpHeight) / Mathf.Pow(timeToJumpApex, 2);
+        gravity = 1;
         maxJumpVelocity = Mathf.Abs(gravity) * timeToJumpApex;
         minJumpVelocity = Mathf.Sqrt(2 * Mathf.Abs(gravity) * minJumpHeight);
         print("Gravity: " + gravity + "  Jump Velocity: " + maxJumpVelocity);

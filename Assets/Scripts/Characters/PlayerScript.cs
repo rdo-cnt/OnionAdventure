@@ -10,9 +10,10 @@ public class PlayerScript : MonoBehaviour
         Free,
         Dash,
         SuperDash,
-        StickyJump
+        StickyJump,
+        Bump
     }
-    protected PlayerState state = PlayerState.Free;
+    public PlayerState state = PlayerState.Free;
 
     //Input
     Vector2 input;
@@ -30,7 +31,7 @@ public class PlayerScript : MonoBehaviour
     //Platforming related
     public float maxJumpHeight = 4;
     public float minJumpHeight = 1;
-    public float timeToJumpApex = .4f;
+    public float gravityMultiplier = 1;
     protected float gravity;
     float maxJumpVelocity;
     float minJumpVelocity;
@@ -44,12 +45,15 @@ public class PlayerScript : MonoBehaviour
     protected AnimationManager animationManager;
     protected Destructor blockDestructor;
     public Rigidbody2D rigidbody;
+    protected CapsuleCollider2D collider;
+    public PhysicsMaterial2D airMaterial;
+    public PhysicsMaterial2D groundMaterial;
 
     //Dashing
     protected IEnumerator DashRoutine;
     public float dashTime = 1.2f;
     public float stickingTime = 1f;
-    protected float stickingTimer;
+    public float stickingTimer;
    
 
 
@@ -67,6 +71,7 @@ public class PlayerScript : MonoBehaviour
         animationManager = GetComponent<AnimationManager>();
         blockDestructor = GetComponent<Destructor>();
         rigidbody = GetComponent<Rigidbody2D>();
+        collider = GetComponent<CapsuleCollider2D>();
     }
 
     void initializeVariables()
@@ -77,9 +82,9 @@ public class PlayerScript : MonoBehaviour
 
     void setInitialGravity()
     {
-        gravity = -(0.1f * maxJumpHeight) / Mathf.Pow(timeToJumpApex, 2);
-        maxJumpVelocity = Mathf.Abs(gravity) * timeToJumpApex;
-        minJumpVelocity = Mathf.Sqrt(2 * Mathf.Abs(gravity) * minJumpHeight);
+        gravity = -gravityMultiplier;
+        maxJumpVelocity = maxJumpHeight;
+        minJumpVelocity = minJumpHeight;
     }
 
     // Update is called once per frame
@@ -89,13 +94,12 @@ public class PlayerScript : MonoBehaviour
         CheckForGravity();
         CheckForStickiness();
 
-
         //Do actions based on states
         switch (state)
         {
             case PlayerState.Free:
-                Walk();
                 Jump();
+                Walk();
                 AttackStart();
                 checkDirection();
                 CheckForSlope();
@@ -116,6 +120,10 @@ public class PlayerScript : MonoBehaviour
             case PlayerState.StickyJump:
                 StickJump();
                 break;
+
+            case PlayerState.Bump:
+                Bump();
+                break;
         }
     }
 
@@ -123,14 +131,23 @@ public class PlayerScript : MonoBehaviour
     {
         input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
         floorAttachingMovement.MoveSideWays(input.x * fStandSpeed);
+        transform.eulerAngles = new Vector3(0, 0, 0);
     }
 
     public void CheckForGravity()
     {
-        if (floorAttachingMovement.isGrounded && floorAttachingMovement.isSticked)
+        if (floorAttachingMovement.isSticked)
             rigidbody.gravityScale = 0f;
         else
             rigidbody.gravityScale = -gravity;
+    }
+
+    public void CheckForFriction()
+    {
+        if (floorAttachingMovement.isGrounded && !floorAttachingMovement.isSticked)
+            collider.sharedMaterial = groundMaterial;
+        else
+            collider.sharedMaterial = airMaterial;
     }
 
     public void CheckForStickiness()
@@ -143,7 +160,11 @@ public class PlayerScript : MonoBehaviour
             if (stickingTimer > 0)
                 stickingTimer -= Time.deltaTime;
             else
+            {
                 floorAttachingMovement.isSticked = false;
+                state = PlayerState.Free;
+            }
+                
         }
     }
 
@@ -151,11 +172,12 @@ public class PlayerScript : MonoBehaviour
     {
         if (Input.GetButtonDown("Jump"))
         {
-            if (floorAttachingMovement.isSticked)
+            if (floorAttachingMovement.isSticked && Mathf.Abs(floorAttachingMovement.groundedAngle) > floorAttachingMovement.maxStandingAngle)
             {
-                directionFloatX *= -1;
+                directionFloatX = Mathf.Sign(floorAttachingMovement.groundedAngle);
+                Debug.Log(floorAttachingMovement.groundedAngle);
                 floorAttachingMovement.isSticked = false;
-                rigidbody.velocity = new Vector2(Mathf.Sign(floorAttachingMovement.middleAngle.angle)*fStickJump, rigidbody.velocity.y);
+                rigidbody.velocity = new Vector2(directionFloatX*fStickJump, fStickJump);
                 state = PlayerState.StickyJump;
 
             }
@@ -163,15 +185,18 @@ public class PlayerScript : MonoBehaviour
             if (floorAttachingMovement.isGrounded)
             {
                 rigidbody.velocity = new Vector2(rigidbody.velocity.x, maxJumpVelocity);
-            }
+                floorAttachingMovement.isGrounded = false;
+                floorAttachingMovement.isRayShortened = true;
+                floorAttachingMovement.CheckShortenedRays();
 
+            }
 
         }
 
         if (Input.GetButtonUp("Jump"))
         {
 
-            if (!floorAttachingMovement.isGrounded && rigidbody.velocity.y > minJumpVelocity)
+            if (rigidbody.velocity.y > minJumpVelocity && !floorAttachingMovement.isSticked)
             {
                 rigidbody.velocity = new Vector2(rigidbody.velocity.x,minJumpVelocity);
             }
@@ -181,12 +206,10 @@ public class PlayerScript : MonoBehaviour
 
     public void CheckForSlope()
     {
-        if (input.y < 0 && floorAttachingMovement.isGrounded && floorAttachingMovement.middleAngle.angle != 0)
+        if (input.y < 0 && floorAttachingMovement.isGrounded && floorAttachingMovement.groundedAngle != 0)
         {
-            directionFloatX = Mathf.Sign(floorAttachingMovement.middleAngle.angle);
-            input.x = Mathf.Sign(floorAttachingMovement.middleAngle.angle);
-            Debug.Log("could do a slope dash, angle is" + floorAttachingMovement.middleAngle.angle);
-            Debug.Log("Would make you go to direction:" + Mathf.Sign(floorAttachingMovement.middleAngle.angle));
+            directionFloatX = Mathf.Sign(floorAttachingMovement.groundedAngle);
+            input.x = Mathf.Sign(floorAttachingMovement.groundedAngle);
             state = PlayerState.SuperDash;
         }
     }
@@ -240,7 +263,6 @@ public class PlayerScript : MonoBehaviour
         }
         else
         {
-            floorAttachingMovement.isSticked = false;
             floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
         }
 
@@ -252,8 +274,11 @@ public class PlayerScript : MonoBehaviour
         if (floorAttachingMovement.isBumping)
         {
             floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
-            state = PlayerState.Free;
+            state = PlayerState.Bump;
             floorAttachingMovement.isSticked = false;
+            floorAttachingMovement.isRayShortened = true;
+            rigidbody.velocity = new Vector2(transform.right.x * -directionFloatX, transform.right.y) * fDashSpeed;
+            transform.eulerAngles = new Vector3(0, 0, 0);
         }
     }
 
@@ -275,6 +300,14 @@ public class PlayerScript : MonoBehaviour
                 state = PlayerState.Free;
             }
         }
+    }
+
+    public void Bump()
+    {
+        if (floorAttachingMovement.isGrounded)
+        {
+            state = PlayerState.Free;
+        }
 
     }
 
@@ -293,4 +326,6 @@ public class PlayerScript : MonoBehaviour
         if (input.x < 0)
             directionFloatX = -1;
      }
+
+    
 }
