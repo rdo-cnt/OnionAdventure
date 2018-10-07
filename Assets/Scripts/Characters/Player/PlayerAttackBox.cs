@@ -4,13 +4,11 @@ using UnityEngine;
 
 public class PlayerAttackBox : MonoBehaviour {
 
-	// Use this for initialization
-	void Start () {
-		
-	}
-	
-	// Update is called once per frame
-	void Update () {
-		
-	}
+    public PlayerScript playerReference;
+
+    // Use this for initialization
+    void Start()
+    {
+
+    }
 }

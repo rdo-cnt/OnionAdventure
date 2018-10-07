@@ -17,7 +17,10 @@ public class PlayerScript : MonoBehaviour
 
     //Input
     Vector2 input;
+    private float directionFloatY = 0;
     private float directionFloatX = 1;
+    private Vector2 initialScale;
+    public Transform spriteTransform;
 
     //Platforming related
 
@@ -31,14 +34,24 @@ public class PlayerScript : MonoBehaviour
     //Platforming related
     public float maxJumpHeight = 4;
     public float minJumpHeight = 1;
+    public float bumpJump = 10;
+    public float maxFallSpeed = 10;
     public float gravityMultiplier = 1;
     protected float gravity;
     float maxJumpVelocity;
     float minJumpVelocity;
+    public float verticalCalulation = 0;
 
     //Angles
     public float maxSlopeAngle = 55f;
     public float maxSlopeAngleSuperDash = 100f;
+
+    //Collision boxes
+    public PlayerHurtBox hurtBox;
+    public PlayerAttackBox attackBox;
+    public Transform colliderTransform;
+    private float regularCollisionHeight;
+    public float crouchCollisionHeight = 0.4f;
 
     //Components
     protected FloorAttachMovement floorAttachingMovement;
@@ -54,7 +67,9 @@ public class PlayerScript : MonoBehaviour
     public float dashTime = 1.2f;
     public float stickingTime = 1f;
     public float stickingTimer;
-   
+    public float dashSlidePower = 0;
+
+
 
 
     // Use this for initialization
@@ -78,6 +93,8 @@ public class PlayerScript : MonoBehaviour
     {
         blockDestructor.enabled = false;
         floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
+        initialScale = spriteTransform.localScale;
+        regularCollisionHeight = colliderTransform.localScale.y;
     }
 
     void setInitialGravity()
@@ -90,9 +107,6 @@ public class PlayerScript : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        //Actions regardless of state
-        CheckForGravity();
-        CheckForStickiness();
 
         //Do actions based on states
         switch (state)
@@ -109,12 +123,13 @@ public class PlayerScript : MonoBehaviour
             case PlayerState.Dash:
                 Jump();
                 Attack();
-
+                WallBumpingCheck();
                 break;
 
             case PlayerState.SuperDash:
                 SuperAttack();
                 Jump();
+                WallBumpingCheck();
                 break;
 
             case PlayerState.StickyJump:
@@ -125,6 +140,13 @@ public class PlayerScript : MonoBehaviour
                 Bump();
                 break;
         }
+
+        //Actions regardless of state
+        CheckForGravity();
+        CheckForStickiness();
+        CheckForCrouch();
+        CheckForCrouchSlide();
+        SetAnimatorVariables();
     }
 
     public void Walk()
@@ -136,10 +158,30 @@ public class PlayerScript : MonoBehaviour
 
     public void CheckForGravity()
     {
-        if (floorAttachingMovement.isSticked)
-            rigidbody.gravityScale = 0f;
-        else
-            rigidbody.gravityScale = -gravity;
+
+        if (verticalCalulation > 0 && floorAttachingMovement.topAngle.detect)
+            verticalCalulation = 0;
+
+        if ((!floorAttachingMovement.isSticked || Mathf.Abs(transform.eulerAngles.z) < floorAttachingMovement.maxStandingAngle) && !floorAttachingMovement.isGrounded)
+        {
+            verticalCalulation += -gravityMultiplier;
+
+            if (verticalCalulation < -maxFallSpeed)
+                verticalCalulation = -maxFallSpeed;
+            transform.Translate(new Vector3(0, verticalCalulation * Time.deltaTime, 0));
+            return;
+
+        }
+
+        if (floorAttachingMovement.isGrounded && verticalCalulation != 0)
+        { 
+            floorAttachingMovement.stickToFloor();
+            verticalCalulation = 0;
+        }
+
+        //transform.Translate(new Vector3(0, verticalCalulation * Time.deltaTime, 0));
+
+
     }
 
     public void CheckForFriction()
@@ -152,8 +194,10 @@ public class PlayerScript : MonoBehaviour
 
     public void CheckForStickiness()
     {
-        //Extra air while skating
-        if (floorAttachingMovement.middleAngle.detect)
+
+
+        //Extra air while skating in uneven terrain
+        if (floorAttachingMovement.middleAngle.detect || floorAttachingMovement.isRayShortened)
             stickingTimer = stickingTime;
         else
         {
@@ -168,25 +212,53 @@ public class PlayerScript : MonoBehaviour
         }
     }
 
+    public void CheckForCrouchSlide()
+    {
+        if (dashSlidePower <= 0)
+            return;
+
+        bool forceCancel = false;
+
+        //Cancel crouch slide if conditions are met
+        if (!floorAttachingMovement.isGrounded)
+            forceCancel = true;
+        if (state != PlayerState.Free)
+            forceCancel = true;
+        if (directionFloatY >= 0)
+            forceCancel = true;
+
+        if (forceCancel)
+        {
+            dashSlidePower = 0;
+            return;
+        }
+        dashSlidePower = dashSlidePower - (dashSlidePower / 40.0f - Time.deltaTime);
+        if (dashSlidePower < 1)
+            dashSlidePower = 0f;
+        floorAttachingMovement.MoveSideWays(dashSlidePower * directionFloatX);
+        
+
+    }
+
     public void Jump()
     {
         if (Input.GetButtonDown("Jump"))
         {
             if (floorAttachingMovement.isSticked && Mathf.Abs(floorAttachingMovement.groundedAngle) > floorAttachingMovement.maxStandingAngle)
             {
-                directionFloatX = Mathf.Sign(floorAttachingMovement.groundedAngle);
-                Debug.Log(floorAttachingMovement.groundedAngle);
                 floorAttachingMovement.isSticked = false;
-                rigidbody.velocity = new Vector2(directionFloatX*fStickJump, fStickJump);
+                verticalCalulation = maxJumpVelocity;
+                input = transform.up;
+                checkDirection();
+                transform.eulerAngles = Vector3.zero;
                 state = PlayerState.StickyJump;
-
+                return;
             }
 
             if (floorAttachingMovement.isGrounded)
             {
-                rigidbody.velocity = new Vector2(rigidbody.velocity.x, maxJumpVelocity);
-                floorAttachingMovement.isGrounded = false;
-                floorAttachingMovement.isRayShortened = true;
+                forceJump(maxJumpHeight);
+                transform.eulerAngles = Vector3.zero;
                 floorAttachingMovement.CheckShortenedRays();
 
             }
@@ -196,9 +268,9 @@ public class PlayerScript : MonoBehaviour
         if (Input.GetButtonUp("Jump"))
         {
 
-            if (rigidbody.velocity.y > minJumpVelocity && !floorAttachingMovement.isSticked)
+            if (verticalCalulation > minJumpVelocity && !floorAttachingMovement.isSticked)
             {
-                rigidbody.velocity = new Vector2(rigidbody.velocity.x,minJumpVelocity);
+                verticalCalulation = minJumpVelocity;
             }
 
         }
@@ -210,6 +282,7 @@ public class PlayerScript : MonoBehaviour
         {
             directionFloatX = Mathf.Sign(floorAttachingMovement.groundedAngle);
             input.x = Mathf.Sign(floorAttachingMovement.groundedAngle);
+            checkDirection();
             state = PlayerState.SuperDash;
         }
     }
@@ -217,14 +290,20 @@ public class PlayerScript : MonoBehaviour
     IEnumerator DashAttack()
     {
         yield return new WaitForSeconds(dashTime);
+        EndAttack();
+    }
+
+    public void EndAttack()
+    {
         state = PlayerState.Free;
         floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
+        attackBox.enabled = false;
     }
 
     public void AttackStart()
     {
         blockDestructor.enabled = false;
-        if (Input.GetButtonDown("Fire1"))
+        if (Input.GetButtonDown("Fire1") && directionFloatY >= 0)
         {
             DashRoutine = DashAttack();
             state = PlayerState.Dash;
@@ -236,6 +315,7 @@ public class PlayerScript : MonoBehaviour
     {
         floorAttachingMovement.MoveSideWays(fDashSpeed * directionFloatX);
         blockDestructor.enabled = true;
+        attackBox.enabled = true;
 
         //Change angle depended on groundedness
         if (floorAttachingMovement.isGrounded)
@@ -247,13 +327,23 @@ public class PlayerScript : MonoBehaviour
             floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
         }
 
-        WallBumpingCheck();
+        //Cancel on crouch
+        if(directionFloatY < 0)
+        {
+            dashSlidePower = fDashSpeed*1.5f;
+            if (DashRoutine != null)
+                StopCoroutine(DashRoutine);
+            EndAttack();
+        }
+        
+
     }
 
     public void SuperAttack()
     {
         floorAttachingMovement.MoveSideWays(fSuperDashSpeed * directionFloatX);
         blockDestructor.enabled = true;
+        attackBox.enabled = true;
 
         //Change angle depended on groundedness
         if (floorAttachingMovement.isGrounded)
@@ -264,32 +354,42 @@ public class PlayerScript : MonoBehaviour
         else
         {
             floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
+            //if (Mathf.Abs(transform.eulerAngles.z) < floorAttachingMovement.maxStandingAngle)
+            //{
+            //    Debug.Log("straigthern up");
+            //    transform.eulerAngles = Vector3.zero;
+            //}
+               
         }
 
-        WallBumpingCheck();
     }
 
     public void WallBumpingCheck()
     {
         if (floorAttachingMovement.isBumping)
         {
+            Debug.Log("I bumped ok");
+            if(DashRoutine != null)
+            StopCoroutine(DashRoutine);
             floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
             state = PlayerState.Bump;
-            floorAttachingMovement.isSticked = false;
-            floorAttachingMovement.isRayShortened = true;
-            rigidbody.velocity = new Vector2(transform.right.x * -directionFloatX, transform.right.y) * fDashSpeed;
+            forceJump(bumpJump);
             transform.eulerAngles = new Vector3(0, 0, 0);
+            attackBox.enabled = false;
         }
     }
 
     public void StickJump()
     {
+        //Move
+        transform.Translate(input * fStickJump * Time.deltaTime,Space.World);
+
         if (floorAttachingMovement.isBumping)
         {
-            state = PlayerState.Free;
+            state = PlayerState.Bump;
         }
 
-        if (floorAttachingMovement.isBumping || floorAttachingMovement.isGrounded)
+        if (floorAttachingMovement.isGrounded)
         {
             if (Input.GetAxisRaw("Vertical") < 0)
             {
@@ -298,6 +398,7 @@ public class PlayerScript : MonoBehaviour
             else
             {
                 state = PlayerState.Free;
+                forceJump(bumpJump);
             }
         }
     }
@@ -311,13 +412,27 @@ public class PlayerScript : MonoBehaviour
 
     }
 
+    public void forceJump(float jumpSpeed)
+    {
+        transform.Translate(new Vector3(0, 0.4f, 0));
+        floorAttachingMovement.isGrounded = false;
+        floorAttachingMovement.isSticked = false;
+        floorAttachingMovement.isRayShortened = true;
+        verticalCalulation = jumpSpeed;
+    }
+
     public void SetAnimatorVariables()
     {
         animationManager.getAnimator().SetFloat("Speed", input.x);
+        animationManager.getAnimator().SetFloat("VerticalInput", directionFloatY);
         animationManager.getAnimator().SetBool("InAir", !floorAttachingMovement.isGrounded);
         animationManager.getAnimator().SetBool("Dash", (state == PlayerState.Dash));
         animationManager.getAnimator().SetBool("SuperDash", (state == PlayerState.SuperDash));
+        animationManager.getAnimator().SetBool("Bump", (state == PlayerState.Bump));
+        animationManager.getAnimator().SetBool("StickyJump", (state == PlayerState.StickyJump));
+        animationManager.getAnimator().SetFloat("VerticalSpeed", verticalCalulation);
     }
+
 
     public void checkDirection()
     {
@@ -325,7 +440,35 @@ public class PlayerScript : MonoBehaviour
             directionFloatX = 1;
         if (input.x < 0)
             directionFloatX = -1;
+
+        spriteTransform.localScale = new Vector2(initialScale.x * directionFloatX, initialScale.y);
      }
+
+    public void CheckForCrouch()
+    {
+        float oldDirectionFloatY = directionFloatY;
+        directionFloatY = Input.GetAxisRaw("Vertical");
+        if (oldDirectionFloatY < 0 && floorAttachingMovement.topAngle.detect)
+            directionFloatY = -1;
+
+        bool forceCrouch = false;
+        if (directionFloatY < 0)
+            forceCrouch = true;
+        if (state == PlayerState.SuperDash)
+            forceCrouch = true;
+
+        if(forceCrouch)
+        {
+            colliderTransform.localScale = new Vector3(colliderTransform.localScale.x, crouchCollisionHeight , colliderTransform.localScale.z);
+            floorAttachingMovement.canBumpTop = false;
+        }
+        else
+        {
+            colliderTransform.localScale = new Vector3(colliderTransform.localScale.x, regularCollisionHeight, colliderTransform.localScale.z);
+            floorAttachingMovement.canBumpTop = true;
+        }
+    }
+
 
     
 }
