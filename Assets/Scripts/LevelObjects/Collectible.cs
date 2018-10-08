@@ -11,9 +11,9 @@ public class Collectible : MonoBehaviour {
 
     public virtual void OnCollectiblePick(){}
 
-    void OnTriggerEnter2d(Collider2D other)
+    void OnTriggerEnter2D(Collider2D other)
     {
-        if(other.GetComponent<PlayerScript>() != null)
+        if(other.GetComponent<PlayerHurtBox>() != null)
         {
             OnCollectiblePick();
         }

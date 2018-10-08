@@ -11,7 +11,8 @@ public class PlayerScript : MonoBehaviour
         Dash,
         SuperDash,
         StickyJump,
-        Bump
+        Bump,
+        Hit
     }
     public PlayerState state = PlayerState.Free;
 
@@ -49,6 +50,7 @@ public class PlayerScript : MonoBehaviour
     //Collision boxes
     public PlayerHurtBox hurtBox;
     public PlayerAttackBox attackBox;
+    public Destructor destructor;
     public Transform colliderTransform;
     private float regularCollisionHeight;
     public float crouchCollisionHeight = 0.4f;
@@ -64,13 +66,18 @@ public class PlayerScript : MonoBehaviour
 
     //Dashing
     protected IEnumerator DashRoutine;
-    public float dashTime = 1.2f;
+    public float dashTime = 0.6f;
     public float stickingTime = 1f;
-    public float stickingTimer;
+    protected float stickingTimer;
     public float dashSlidePower = 0;
 
-
-
+    //Hit and invincibility
+    public float invicibilityTime = 1.5f;
+    public float invicibilityTimer;
+    public float fHitSpeed = 2f;
+    public float hurtJump = 5;
+    public float bounces = 3;
+    protected float bounceCounter = 0;
 
     // Use this for initialization
     void Start()
@@ -139,9 +146,15 @@ public class PlayerScript : MonoBehaviour
             case PlayerState.Bump:
                 Bump();
                 break;
+
+            case PlayerState.Hit:
+                Hit();
+                
+                break;
         }
 
         //Actions regardless of state
+        CheckForInvincibility();
         CheckForGravity();
         CheckForStickiness();
         CheckForCrouch();
@@ -297,7 +310,7 @@ public class PlayerScript : MonoBehaviour
     {
         state = PlayerState.Free;
         floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
-        attackBox.enabled = false;
+        disableAttackBoxes();
     }
 
     public void AttackStart()
@@ -314,8 +327,7 @@ public class PlayerScript : MonoBehaviour
     public void Attack()
     {
         floorAttachingMovement.MoveSideWays(fDashSpeed * directionFloatX);
-        blockDestructor.enabled = true;
-        attackBox.enabled = true;
+        enableAttackBoxes();
 
         //Change angle depended on groundedness
         if (floorAttachingMovement.isGrounded)
@@ -339,11 +351,22 @@ public class PlayerScript : MonoBehaviour
 
     }
 
+    public void enableAttackBoxes()
+    {
+        attackBox.enabled = true;
+        destructor.enabled = true;
+    }
+
+    public void disableAttackBoxes()
+    {
+        attackBox.enabled = false;
+        destructor.enabled = false;
+    }
+
     public void SuperAttack()
     {
         floorAttachingMovement.MoveSideWays(fSuperDashSpeed * directionFloatX);
-        blockDestructor.enabled = true;
-        attackBox.enabled = true;
+        enableAttackBoxes();
 
         //Change angle depended on groundedness
         if (floorAttachingMovement.isGrounded)
@@ -375,7 +398,7 @@ public class PlayerScript : MonoBehaviour
             state = PlayerState.Bump;
             forceJump(bumpJump);
             transform.eulerAngles = new Vector3(0, 0, 0);
-            attackBox.enabled = false;
+            disableAttackBoxes();
         }
     }
 
@@ -412,6 +435,44 @@ public class PlayerScript : MonoBehaviour
 
     }
 
+    public void TakeHit()
+    {
+        if(invicibilityTimer <= 0)
+        {
+            Debug.Log("wwerr");
+            state = PlayerState.Hit;
+            forceJump(hurtJump);
+            invicibilityTimer = invicibilityTime;
+            bounceCounter = bounces;
+        }
+        
+    }
+
+    public void Hit()
+    {
+        floorAttachingMovement.MoveSideWays(fHitSpeed * -directionFloatX);
+        invicibilityTimer = invicibilityTime;
+        if (floorAttachingMovement.isGrounded )
+        {
+            if(bounceCounter <= 0)
+            {
+                state = PlayerState.Free;
+                return;
+            }
+            bounceCounter -= 1;
+            forceJump(hurtJump*(bounceCounter/bounces));
+
+        }
+
+    }
+
+    public void CheckForInvincibility()
+    {
+            if (invicibilityTimer > 0)
+                invicibilityTimer -= Time.deltaTime;
+
+    }
+
     public void forceJump(float jumpSpeed)
     {
         transform.Translate(new Vector3(0, 0.4f, 0));
@@ -429,6 +490,7 @@ public class PlayerScript : MonoBehaviour
         animationManager.getAnimator().SetBool("Dash", (state == PlayerState.Dash));
         animationManager.getAnimator().SetBool("SuperDash", (state == PlayerState.SuperDash));
         animationManager.getAnimator().SetBool("Bump", (state == PlayerState.Bump));
+        animationManager.getAnimator().SetBool("Hit", (state == PlayerState.Hit));
         animationManager.getAnimator().SetBool("StickyJump", (state == PlayerState.StickyJump));
         animationManager.getAnimator().SetFloat("VerticalSpeed", verticalCalulation);
     }

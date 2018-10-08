@@ -25,6 +25,11 @@ public class Cat : BaseEnemy {
     public float dieJump = 10f;
     public float dieTime = 3f;
 
+    //Attack
+    protected IEnumerator AttackRoutine;
+    public float attackTime = 1f;
+    public float attackJump = 1f;
+
     //The player states
     public enum EnemyState
     {
@@ -74,9 +79,11 @@ public class Cat : BaseEnemy {
 
                 break;
 
-            case EnemyState.Bump:
-                
+            case EnemyState.Attack:
+                Attack();
                 break;
+
+                
         }
 
         //Actions regardless of state
@@ -105,6 +112,7 @@ public class Cat : BaseEnemy {
         animationManager.getAnimator().SetBool("InAir", !floorAttachingMovement.isGrounded);
         animationManager.getAnimator().SetBool("Bump", (state == EnemyState.Bump));
         animationManager.getAnimator().SetBool("Hit", (state == EnemyState.Hit));
+        animationManager.getAnimator().SetBool("Attack", (state == EnemyState.Attack));
         animationManager.getAnimator().SetFloat("VerticalSpeed", verticalCalulation);
     }
 
@@ -145,7 +153,24 @@ public class Cat : BaseEnemy {
     }
 
     public override void OnPlayerTouch(PlayerScript player) {
+        if (state == EnemyState.Hit)
+            return;
 
+        
+        if(player.invicibilityTimer <= 0)
+        {
+            player.TakeHit();
+            if (transform.position.x > player.transform.position.x)
+                directionFloatX = -1;
+            else
+                directionFloatX = 1;
+            ChangeDirection();
+            state = EnemyState.Attack;
+            AttackRoutine = AttackR();
+            StartCoroutine(AttackRoutine);
+
+                
+        }
     }
 
     public override void OnAttacked(PlayerScript player)
@@ -159,14 +184,27 @@ public class Cat : BaseEnemy {
             DieRoutine = WaitToImplode();
             StartCoroutine(DieRoutine);
         }
-        
-
     }
 
     IEnumerator WaitToImplode()
     {
         yield return new WaitForSeconds(dieTime);
         Destroy(gameObject);
+    }
+
+    IEnumerator AttackR()
+    {
+        yield return new WaitForSeconds(attackTime);
+        if(state != EnemyState.Hit)
+            state = EnemyState.Free;
+    }
+
+    public void Attack()
+    {
+        if(floorAttachingMovement.isGrounded)
+        {
+            forceJump(attackJump);
+        }
     }
 
     public void ChangeDirection()

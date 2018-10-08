@@ -99,7 +99,7 @@ public class FloorAttachMovement : MonoBehaviour
             canBumpRight = false;
         }
 
-        Debug.Log("left: " + leftAngle.angle + "middle: " + middleAngle.angle + "right: " + rightAngle.angle);
+        //Debug.Log("left: " + leftAngle.angle + "middle: " + middleAngle.angle + "right: " + rightAngle.angle);
     }
 
     public void GroundedCalculation()
@@ -194,6 +194,7 @@ public class FloorAttachMovement : MonoBehaviour
             //transform.Translate((new Vector3(transform.right.x, transform.right.y, 0)) * speedX * Time.deltaTime);
             Vector3 tempDirection = transform.right * speedX * Time.deltaTime;
             transform.Translate(tempDirection, Space.World);
+            stickToFloor();
             //rigidbody.velocity = new Vector2(transform.right.x, transform.right.y) * speedX;
         }
         else
@@ -277,7 +278,8 @@ public class FloorAttachMovement : MonoBehaviour
 
     public void MoveRight(float speedX)
     {
-        float forwardAngle = (groundedAngle != 0) ? groundedAngle : middleAngle.angle;
+        float correctEulerAngle = Wrap(transform.eulerAngles.z, 180, -180);
+        float forwardAngle = (isGrounded) ? middleAngle.angle : -correctEulerAngle;
 
         float angleDifference = Mathf.Abs(Mathf.Abs(rightAngle.angle) - Mathf.Abs(forwardAngle));
         float angleDifferenceSign = Mathf.Sign(rightAngle.angle - groundedAngle);
@@ -297,11 +299,12 @@ public class FloorAttachMovement : MonoBehaviour
 
             }
 
-            if (isSticked && (isGrounded || angleDifference < maxStandingAngle))
+            if (isSticked && (isGrounded || angleDifference < maxStandingAngle || Mathf.Abs(rightAngle.angle) < maxStandingAngle) )
             {
                 //Change Angle of player
                 transform.eulerAngles = new Vector3(0, 0, -rightAngle.angle);
                 stickToFloor();
+                return;
             }
 
         }
@@ -309,6 +312,7 @@ public class FloorAttachMovement : MonoBehaviour
             if (angleDifference > maxClimbingAngle && canBumpRight)
             {
             Debug.Log("I bumped");
+            Debug.Log("Angle difference: " + angleDifference + " forward angle: " + forwardAngle + " right Angle: " + rightAngle.angle);
             isBumping = true;
             }
 
@@ -318,7 +322,8 @@ public class FloorAttachMovement : MonoBehaviour
 
     public void MoveLeft(float speedX)
     {
-        float forwardAngle = (groundedAngle != 0) ? groundedAngle : middleAngle.angle;
+        float correctEulerAngle = Wrap(transform.eulerAngles.z, 180, -180);
+        float forwardAngle = (isGrounded) ? middleAngle.angle : -correctEulerAngle;
 
         float angleDifference = Mathf.Abs(Mathf.Abs(leftAngle.angle) - Mathf.Abs(forwardAngle));
         float angleDifferenceSign = Mathf.Sign(forwardAngle - leftAngle.angle);
@@ -373,6 +378,15 @@ public class FloorAttachMovement : MonoBehaviour
     public bool CompareFloats(float a, float b = 0)
     {
         return (Mathf.Abs(a - b) < 0.3f);
+    }
+
+    public static float Wrap(float value, float max, float min)
+    {
+        max -= min;
+        if (max == 0)
+            return min;
+
+        return value - max * (float)Mathf.Floor((value - min) / max);
     }
 
 

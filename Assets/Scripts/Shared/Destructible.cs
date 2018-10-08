@@ -14,20 +14,22 @@ public class Destructible : MonoBehaviour {
 		
 	}
 
-    void OnCollisionEnter2D(Collision2D other)
+    void OnTriggerEnter2D(Collider2D other)
     {
-        if (other.gameObject.GetComponent<Destructor>()!=null && other.gameObject.GetComponent<Destructor>().enabled)
+        if (other.GetComponent<Destructor>()!=null ) 
         {
-            Destroy(gameObject);
+              if(other.GetComponent<Destructor>().enabled)
+                Destroy(gameObject);
         }
 
     }
 
-    void OnCollisionStay2D(Collision2D other)
+    void OnTriggerStay2D(Collider2D other)
     {
-        if (other.gameObject.GetComponent<Destructor>() != null && other.gameObject.GetComponent<Destructor>().enabled)
+        if (other.GetComponent<Destructor>() != null)
         {
-            Destroy(gameObject);
+            if (other.GetComponent<Destructor>().enabled)
+                Destroy(gameObject);
         }
 
     }
