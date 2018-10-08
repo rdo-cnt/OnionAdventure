@@ -431,6 +431,7 @@ public class PlayerScript : MonoBehaviour
         if (floorAttachingMovement.isGrounded)
         {
             state = PlayerState.Free;
+            disableAttackBoxes();
         }
 
     }
