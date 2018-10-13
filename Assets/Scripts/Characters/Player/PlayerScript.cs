@@ -70,6 +70,8 @@ public class PlayerScript : MonoBehaviour
     public float stickingTime = 1f;
     protected float stickingTimer;
     public float dashSlidePower = 0;
+    public float BumpPreventionTime = 0.1f;
+    protected float BumpPreventionTimer;
 
     //Hit and invincibility
     public float invicibilityTime = 1.5f;
@@ -135,8 +137,9 @@ public class PlayerScript : MonoBehaviour
 
             case PlayerState.SuperDash:
                 SuperAttack();
-                Jump();
                 WallBumpingCheck();
+                Jump();
+                
                 break;
 
             case PlayerState.StickyJump:
@@ -149,7 +152,6 @@ public class PlayerScript : MonoBehaviour
 
             case PlayerState.Hit:
                 Hit();
-                
                 break;
         }
 
@@ -159,6 +161,7 @@ public class PlayerScript : MonoBehaviour
         CheckForStickiness();
         CheckForCrouch();
         CheckForCrouchSlide();
+        CheckForBumpPrevention();
         SetAnimatorVariables();
     }
 
@@ -207,8 +210,6 @@ public class PlayerScript : MonoBehaviour
 
     public void CheckForStickiness()
     {
-
-
         //Extra air while skating in uneven terrain
         if (floorAttachingMovement.middleAngle.detect || floorAttachingMovement.isRayShortened)
             stickingTimer = stickingTime;
@@ -223,6 +224,13 @@ public class PlayerScript : MonoBehaviour
             }
                 
         }
+    }
+
+    public void CheckForBumpPrevention()
+    {
+            if (BumpPreventionTimer > 0)
+                BumpPreventionTimer -= Time.deltaTime;
+
     }
 
     public void CheckForCrouchSlide()
@@ -260,11 +268,20 @@ public class PlayerScript : MonoBehaviour
             if (floorAttachingMovement.isSticked && Mathf.Abs(floorAttachingMovement.groundedAngle) > floorAttachingMovement.maxStandingAngle)
             {
                 floorAttachingMovement.isSticked = false;
-                verticalCalulation = maxJumpVelocity;
-                input = transform.up;
+                verticalCalulation = maxJumpVelocity * transform.up.y;
+                if (transform.up.y == -1)
+                {
+                    input = new Vector2(transform.up.x * directionFloatX, transform.up.y);
+                    Debug.Log("epic");
+                }
+                   
+                else
+                    input = transform.up;
                 checkDirection();
-                transform.eulerAngles = Vector3.zero;
                 state = PlayerState.StickyJump;
+                transform.eulerAngles = Vector3.zero;
+                BumpPreventionTimer = BumpPreventionTime;
+                floorAttachingMovement.CheckShortenedRays();
                 return;
             }
 
@@ -405,14 +422,15 @@ public class PlayerScript : MonoBehaviour
     public void StickJump()
     {
         //Move
-        transform.Translate(input * fStickJump * Time.deltaTime,Space.World);
-
+        transform.Translate(new Vector2(Mathf.Sign(input.x),input.y )* fStickJump * Time.deltaTime,Space.World);
+        
+  
         if (floorAttachingMovement.isBumping)
         {
             state = PlayerState.Bump;
         }
 
-        if (floorAttachingMovement.isGrounded)
+        if (floorAttachingMovement.isGrounded && BumpPreventionTimer <= 0)
         {
             if (Input.GetAxisRaw("Vertical") < 0)
             {
@@ -519,8 +537,10 @@ public class PlayerScript : MonoBehaviour
             forceCrouch = true;
         if (state == PlayerState.SuperDash)
             forceCrouch = true;
+        if (state == PlayerState.StickyJump)
+            forceCrouch = true;
 
-        if(forceCrouch)
+        if (forceCrouch)
         {
             colliderTransform.localScale = new Vector3(colliderTransform.localScale.x, crouchCollisionHeight , colliderTransform.localScale.z);
             floorAttachingMovement.canBumpTop = false;
