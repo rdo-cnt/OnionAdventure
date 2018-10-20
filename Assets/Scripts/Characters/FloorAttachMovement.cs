@@ -27,7 +27,6 @@ public class FloorAttachMovement : MonoBehaviour
     public float maxClimbingAngle = 80f;
     public float maxStandingAngle = 55f;
     public float groundedAngle = 0f;
-    public float testSpeed = 18f;
 
     public bool isGrounded = false;
     public bool isSticked = false;
@@ -37,6 +36,8 @@ public class FloorAttachMovement : MonoBehaviour
     public bool canBumpRight = true;
     public bool canBump = true;
     public bool canBumpTop = true;
+    public bool isDescending = false;
+    public bool isAscending = false;
 
     // Use this for initialization
     void Start()
@@ -182,6 +183,8 @@ public class FloorAttachMovement : MonoBehaviour
     {
         //Initial Values
         isBumping = false;
+        isAscending = false;
+        isDescending = false;
 
         if (speedX == 0)
         {
@@ -286,21 +289,18 @@ public class FloorAttachMovement : MonoBehaviour
 
         if (angleDifference <= maxClimbingAngle)
         {
-
-            //climbing
-            if (angleDifferenceSign < 0)
+            if (forwardAngle != 0 && forwardAngle != 180)
             {
-                //Debug.Log("climbing");
-
-            }
-            //descending
-            else
-            {
-
+                //climbing or descending?
+                if (forwardAngle < 0)
+                    isAscending = true;
+                else
+                    isDescending = true;
             }
 
-            if (isSticked && (isGrounded || angleDifference < maxStandingAngle || Mathf.Abs(rightAngle.angle) < maxStandingAngle) )
+            if (isSticked && (angleDifference < maxStandingAngle || (isGrounded && Mathf.Abs(rightAngle.angle) < maxStandingAngle && Mathf.Abs(correctEulerAngle) < maxStandingAngle) ))
             {
+                Debug.Log(Mathf.Abs(correctEulerAngle));
                 //Change Angle of player
                 transform.eulerAngles = new Vector3(0, 0, -rightAngle.angle);
                 stickToFloor();
@@ -330,23 +330,14 @@ public class FloorAttachMovement : MonoBehaviour
 
         if (angleDifference <= maxClimbingAngle)
         {
-            //climbing
-            if (angleDifferenceSign < 0)
+           
+            if (forwardAngle != 0 && forwardAngle != 180)
             {
-                if (!CompareFloats(leftAngle.angle, forwardAngle))
-                {
-                    //rigidbody.MovePosition(transform.position + ((new Vector3(-transform.right.x, -transform.right.y, 0)) * leftAngle.distance));
-
-                }
-            }
-
-            //descend
-            else
-            {
-                if (!CompareFloats(leftAngle.angle, forwardAngle))
-                {
-                    //rigidbody.velocity = rigidbody.velocity * ((new Vector2(-transform.up.x, -transform.up.y)) * Mathf.Sign(speedX) * 2);
-                }
+                //climbing
+                if (forwardAngle > 0)
+                    isAscending = true;
+                else
+                    isDescending = true;
             }
 
             if (isSticked && (isGrounded || angleDifference < maxStandingAngle))

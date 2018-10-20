@@ -30,7 +30,7 @@ public class Cat : BaseEnemy {
     public float attackTime = 1f;
     public float attackJump = 1f;
 
-    //The player states
+    //The character states
     public enum EnemyState
     {
         Free,
@@ -177,6 +177,19 @@ public class Cat : BaseEnemy {
     {
         Debug.Log("waaa");
         if(state != EnemyState.Hit)
+        {
+            floorAttachingMovement.enabled = false;
+            forceJump(dieJump);
+            state = EnemyState.Hit;
+            DieRoutine = WaitToImplode();
+            StartCoroutine(DieRoutine);
+        }
+    }
+
+    public override void OnAttackedByProjectile(Throwable throwable)
+    {
+        Debug.Log("waaa");
+        if (state != EnemyState.Hit)
         {
             floorAttachingMovement.enabled = false;
             forceJump(dieJump);

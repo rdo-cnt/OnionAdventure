@@ -2,22 +2,25 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class BaseEnemy : MonoBehaviour {
+public class Throwable : MonoBehaviour {
 
 	// Use this for initialization
 	void Start () {
 		
 	}
+
     public virtual void OnPlayerTouch(PlayerScript player) { }
     public virtual void OnAttacked(PlayerScript player) { }
-    public virtual void OnAttackedByProjectile(Throwable throwable) { }
+    public virtual void OnThrown(PlayerScript player) { }
+    public virtual void OnThrownUpwards(PlayerScript player) { }
+    public virtual void OnReleased(PlayerScript player) { }
 
     void OnTriggerEnter2D(Collider2D other)
     {
-        if (other.GetComponent<PlayerHurtBox>() != null)
+        if (other.GetComponent<PlayerPickUpBox>() != null)
         {
-            if (other.GetComponent<PlayerHurtBox>().enabled)
-            OnPlayerTouch(other.GetComponent<PlayerHurtBox>().playerReference);
+            if (other.GetComponent<PlayerPickUpBox>().enabled)
+                OnPlayerTouch(other.GetComponent<PlayerPickUpBox>().playerReference);
         }
 
         if (other.GetComponent<PlayerAttackBox>() != null)
@@ -26,19 +29,14 @@ public class BaseEnemy : MonoBehaviour {
                 OnAttacked(other.GetComponent<PlayerAttackBox>().playerReference);
         }
 
-        if (other.GetComponent<ThrowableAttackBox>() != null)
-        {
-            if (other.GetComponent<ThrowableAttackBox>().enabled)
-                OnAttackedByProjectile(other.GetComponent<ThrowableAttackBox>().throwableReference);
-        }
     }
 
     void OnTriggerStay2D(Collider2D other)
     {
-        if (other.GetComponent<PlayerHurtBox>() != null)
+        if (other.GetComponent<PlayerPickUpBox>() != null)
         {
-            if (other.GetComponent<PlayerHurtBox>().enabled)
-                OnPlayerTouch(other.GetComponent<PlayerHurtBox>().playerReference);
+            if (other.GetComponent<PlayerPickUpBox>().enabled)
+                OnPlayerTouch(other.GetComponent<PlayerPickUpBox>().playerReference);
         }
 
         if (other.GetComponent<PlayerAttackBox>() != null)
@@ -47,7 +45,4 @@ public class BaseEnemy : MonoBehaviour {
                 OnAttacked(other.GetComponent<PlayerAttackBox>().playerReference);
         }
     }
-
-
-
 }

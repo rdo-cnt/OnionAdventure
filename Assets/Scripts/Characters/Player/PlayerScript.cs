@@ -12,6 +12,8 @@ public class PlayerScript : MonoBehaviour
         SuperDash,
         StickyJump,
         Bump,
+        Lifting,
+        Throwing,
         Hit
     }
     public PlayerState state = PlayerState.Free;
@@ -19,20 +21,26 @@ public class PlayerScript : MonoBehaviour
     //Input
     Vector2 input;
     private float directionFloatY = 0;
-    private float directionFloatX = 1;
+    public float directionFloatX = 1;
     private Vector2 initialScale;
     public Transform spriteTransform;
 
     //Platforming related
 
     //Move Speeds
-    public float fStandSpeed = 4f;
-    public float fCrouchSpeed = 2f;
-    public float fDashSpeed = 6f;
-    public float fSuperDashSpeed = 8f;
+    public float fStandSpeed = 8f;
+    public float fCrouchSpeed = 4f;
+    public float fDashSpeed = 12f;
+    public float fSuperDashSpeedMin = 8f;
+    public float fSuperDashSpeedInitial = 16f;
+    public float fSuperDashSpeed = 16f;
+    public float fSuperDashSpeedMax = 26f;
     public float fStickJump = 20f;
 
+
     //Platforming related
+    public float coyoteTime = 0.2f;
+    private float coyoteTimer = 0;
     public float maxJumpHeight = 4;
     public float minJumpHeight = 1;
     public float bumpJump = 10;
@@ -50,10 +58,12 @@ public class PlayerScript : MonoBehaviour
     //Collision boxes
     public PlayerHurtBox hurtBox;
     public PlayerAttackBox attackBox;
+    public PlayerPickUpBox pickUpBox;
     public Destructor destructor;
     public Transform colliderTransform;
     private float regularCollisionHeight;
     public float crouchCollisionHeight = 0.4f;
+    
 
     //Components
     protected FloorAttachMovement floorAttachingMovement;
@@ -72,6 +82,13 @@ public class PlayerScript : MonoBehaviour
     public float dashSlidePower = 0;
     public float BumpPreventionTime = 0.1f;
     protected float BumpPreventionTimer;
+    public Transform AttackEffect;
+
+    //Holding
+    public Transform holdPos;
+    public bool isHolding = false;
+    public Throwable heldObject;
+
 
     //Hit and invincibility
     public float invicibilityTime = 1.5f;
@@ -104,6 +121,7 @@ public class PlayerScript : MonoBehaviour
         floorAttachingMovement.maxClimbingAngle = maxSlopeAngle;
         initialScale = spriteTransform.localScale;
         regularCollisionHeight = colliderTransform.localScale.y;
+        AttackEffect.gameObject.SetActive(false);
     }
 
     void setInitialGravity()
@@ -126,6 +144,7 @@ public class PlayerScript : MonoBehaviour
                 AttackStart();
                 checkDirection();
                 CheckForSlope();
+                
 
                 break;
 
@@ -138,6 +157,7 @@ public class PlayerScript : MonoBehaviour
             case PlayerState.SuperDash:
                 SuperAttack();
                 WallBumpingCheck();
+                CheckForSpeedGain();
                 Jump();
                 
                 break;
@@ -150,19 +170,118 @@ public class PlayerScript : MonoBehaviour
                 Bump();
                 break;
 
+            case PlayerState.Lifting:
+                
+                break;
+
+            case PlayerState.Throwing:
+
+                break;
+
             case PlayerState.Hit:
                 Hit();
                 break;
         }
 
         //Actions regardless of state
+
+        CheckForCoyote();
         CheckForInvincibility();
         CheckForGravity();
         CheckForStickiness();
         CheckForCrouch();
         CheckForCrouchSlide();
         CheckForBumpPrevention();
+        CheckForHold();
         SetAnimatorVariables();
+    }
+
+    public void CheckForHold()
+    {
+        pickUpBox.enabled = false;
+        if (state == PlayerState.Free)
+        {
+            pickUpBox.enabled = true;
+            if (directionFloatY < 0 || !floorAttachingMovement.isGrounded)
+                pickUpBox.enabled = false;
+            if (isHolding)
+            {
+                if (directionFloatY < 0)
+                {
+                    releaseObject();
+                }
+            }
+        } 
+    }
+
+    public void CheckForCoyote()
+    {
+        if(coyoteTimer > 0)
+        {
+            coyoteTimer -= Time.deltaTime;
+        }
+    }
+
+    public void StartThrow()
+    {
+        if (isHolding)
+        {
+            state = PlayerState.Throwing;
+        }
+    }
+
+    public void EndThrow()
+    {
+        if (isHolding)
+        {
+            if(directionFloatY>0)
+            {
+                heldObject.OnThrownUpwards(this);
+            }
+            else
+            {
+                if (directionFloatY < 0)
+                {
+                    heldObject.OnReleased(this);
+                }
+                else
+                {
+                    heldObject.OnThrown(this);
+                }
+                
+            }
+            
+            heldObject = null;
+            isHolding = false;
+            state = PlayerState.Free;
+        }
+    }
+
+    public void releaseObject()
+    {
+        if(isHolding)
+        {
+            heldObject.OnReleased(this);
+            heldObject = null;
+            isHolding = false;
+        }
+    }
+
+    public void HoldObject(Throwable throwable)
+    {
+        if(!isHolding)
+        {
+            heldObject = throwable;
+            throwable.transform.parent = holdPos;
+            isHolding = true;
+            state = PlayerState.Lifting;
+        }
+       
+    }
+
+    public void endLifting()
+    {
+        state = PlayerState.Free;
     }
 
     public void Walk()
@@ -170,6 +289,17 @@ public class PlayerScript : MonoBehaviour
         input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
         floorAttachingMovement.MoveSideWays(input.x * fStandSpeed);
         transform.eulerAngles = new Vector3(0, 0, 0);
+    }
+
+    public void startLifting()
+    {
+        state = PlayerState.Lifting;
+        
+    }
+
+    public void stopLifting()
+    {
+        state = PlayerState.Free;
     }
 
     public void CheckForGravity()
@@ -193,6 +323,7 @@ public class PlayerScript : MonoBehaviour
         { 
             floorAttachingMovement.stickToFloor();
             verticalCalulation = 0;
+            coyoteTimer = coyoteTime;
         }
 
         //transform.Translate(new Vector3(0, verticalCalulation * Time.deltaTime, 0));
@@ -221,6 +352,7 @@ public class PlayerScript : MonoBehaviour
             {
                 floorAttachingMovement.isSticked = false;
                 state = PlayerState.Free;
+                disableAttackBoxes();
             }
                 
         }
@@ -285,9 +417,12 @@ public class PlayerScript : MonoBehaviour
                 return;
             }
 
-            if (floorAttachingMovement.isGrounded)
+            if (floorAttachingMovement.isGrounded || coyoteTimer > 0)
             {
-                forceJump(maxJumpHeight);
+                if(directionFloatY<0)
+                    forceJump(maxJumpHeight/1.2f);
+                else
+                    forceJump(maxJumpHeight);
                 transform.eulerAngles = Vector3.zero;
                 floorAttachingMovement.CheckShortenedRays();
 
@@ -314,7 +449,30 @@ public class PlayerScript : MonoBehaviour
             input.x = Mathf.Sign(floorAttachingMovement.groundedAngle);
             checkDirection();
             state = PlayerState.SuperDash;
+            fSuperDashSpeed = fSuperDashSpeedInitial;
+            releaseObject();
         }
+    }
+
+    public void CheckForSpeedGain()
+    {
+        if(floorAttachingMovement.isGrounded)
+        {
+            if (floorAttachingMovement.isAscending)
+            {
+                fSuperDashSpeed -= Time.deltaTime * 8 * (Mathf.Abs(floorAttachingMovement.groundedAngle)/90);
+                if (fSuperDashSpeed < fSuperDashSpeedMin)
+                    fSuperDashSpeed = fSuperDashSpeedMin;
+            }
+
+            if (floorAttachingMovement.isDescending)
+            {
+                fSuperDashSpeed += Time.deltaTime * 12 * (Mathf.Abs(floorAttachingMovement.groundedAngle) / 90);
+                if (fSuperDashSpeed > fSuperDashSpeedMax)
+                    fSuperDashSpeed = fSuperDashSpeedMax;
+            }
+        }
+        
     }
 
     IEnumerator DashAttack()
@@ -332,9 +490,14 @@ public class PlayerScript : MonoBehaviour
 
     public void AttackStart()
     {
-        blockDestructor.enabled = false;
         if (Input.GetButtonDown("Fire1") && directionFloatY >= 0)
         {
+            blockDestructor.enabled = false;
+            if (isHolding)
+            {
+                StartThrow();
+                return;
+            }
             DashRoutine = DashAttack();
             state = PlayerState.Dash;
             StartCoroutine(DashRoutine);
@@ -372,12 +535,14 @@ public class PlayerScript : MonoBehaviour
     {
         attackBox.enabled = true;
         destructor.enabled = true;
+        AttackEffect.gameObject.SetActive(true);
     }
 
     public void disableAttackBoxes()
     {
         attackBox.enabled = false;
         destructor.enabled = false;
+        AttackEffect.gameObject.SetActive(false);
     }
 
     public void SuperAttack()
@@ -428,6 +593,7 @@ public class PlayerScript : MonoBehaviour
         if (floorAttachingMovement.isBumping)
         {
             state = PlayerState.Bump;
+            disableAttackBoxes();
         }
 
         if (floorAttachingMovement.isGrounded && BumpPreventionTimer <= 0)
@@ -435,11 +601,13 @@ public class PlayerScript : MonoBehaviour
             if (Input.GetAxisRaw("Vertical") < 0)
             {
                 state = PlayerState.SuperDash;
+                fSuperDashSpeed = fStickJump;
             }
             else
             {
                 state = PlayerState.Free;
                 forceJump(bumpJump);
+                disableAttackBoxes();
             }
         }
     }
@@ -448,6 +616,7 @@ public class PlayerScript : MonoBehaviour
     {
         if (floorAttachingMovement.isGrounded)
         {
+            floorAttachingMovement.stickToFloor();
             state = PlayerState.Free;
             disableAttackBoxes();
         }
@@ -501,6 +670,18 @@ public class PlayerScript : MonoBehaviour
         verticalCalulation = jumpSpeed;
     }
 
+    public void pickUp()
+    {
+        switch(state)
+        {
+            case PlayerState.Free:
+                isHolding = true;
+                break;
+            default:
+                break;
+        }
+    }
+
     public void SetAnimatorVariables()
     {
         animationManager.getAnimator().SetFloat("Speed", input.x);
@@ -511,6 +692,8 @@ public class PlayerScript : MonoBehaviour
         animationManager.getAnimator().SetBool("Bump", (state == PlayerState.Bump));
         animationManager.getAnimator().SetBool("Hit", (state == PlayerState.Hit));
         animationManager.getAnimator().SetBool("StickyJump", (state == PlayerState.StickyJump));
+        animationManager.getAnimator().SetBool("Lifting", (state == PlayerState.Lifting));
+        animationManager.getAnimator().SetBool("Throwing", (state == PlayerState.Throwing));
         animationManager.getAnimator().SetFloat("VerticalSpeed", verticalCalulation);
     }
 
@@ -523,7 +706,7 @@ public class PlayerScript : MonoBehaviour
             directionFloatX = -1;
 
         spriteTransform.localScale = new Vector2(initialScale.x * directionFloatX, initialScale.y);
-     }
+    }
 
     public void CheckForCrouch()
     {
@@ -553,5 +736,5 @@ public class PlayerScript : MonoBehaviour
     }
 
 
-    
+
 }

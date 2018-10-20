@@ -2,16 +2,17 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class PlayerAttackBox : MonoBehaviour {
+public class PlayerPickUpBox : MonoBehaviour {
 
     public PlayerScript playerReference;
 
-
     // Use this for initialization
-    void Start()
-    {
-
-    }
-
-
+    void Start () {
+		
+	}
+	
+	// Update is called once per frame
+	void Update () {
+		
+	}
 }
